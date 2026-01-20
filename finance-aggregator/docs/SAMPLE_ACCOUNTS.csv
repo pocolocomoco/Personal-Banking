@@ -1,0 +1,11 @@
+account_id,institution,account_name,account_type,is_asset,plaid_account_id,ingestion_method,last_updated,is_active
+wf_checking_001,Wells Fargo,Primary Checking,checking,TRUE,,manual,,TRUE
+wf_savings_001,Wells Fargo,Emergency Fund,savings,TRUE,,manual,,TRUE
+boa_checking_001,Bank of America,Main Checking,checking,TRUE,,manual,,TRUE
+chase_checking_001,Chase,Checking,checking,TRUE,,manual,,TRUE
+chase_credit_001,Chase,Sapphire Preferred,credit,FALSE,,manual,,TRUE
+chase_credit_002,Chase,Freedom Unlimited,credit,FALSE,,manual,,TRUE
+apple_credit_001,Apple Card,Apple Card,credit,FALSE,,manual,,TRUE
+fidelity_invest_001,Fidelity,Brokerage,investment,TRUE,,manual,,TRUE
+fidelity_retire_001,Fidelity,401k,investment,TRUE,,manual,,TRUE
+vanguard_retire_001,Vanguard,Roth IRA,investment,TRUE,,manual,,TRUE

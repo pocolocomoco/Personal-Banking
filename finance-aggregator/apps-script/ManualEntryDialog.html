@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      margin: 0;
+    }
+
+    h2 {
+      margin-top: 0;
+      color: #333;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: bold;
+      color: #555;
+    }
+
+    select, input, textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    select:focus, input:focus, textarea:focus {
+      outline: none;
+      border-color: #4285f4;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background-color: #4285f4;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: #3367d6;
+    }
+
+    .btn-secondary {
+      background-color: #f1f3f4;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background-color: #e8eaed;
+    }
+
+    .message {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .message.success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .message.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Add Manual Balance Entry</h2>
+
+  <div id="message" class="message"></div>
+
+  <form id="entryForm">
+    <div class="form-group">
+      <label for="accountId">Account *</label>
+      <select id="accountId" required>
+        <option value="">Loading accounts...</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="amount">Balance Amount *</label>
+      <input type="number" id="amount" step="0.01" min="0" required placeholder="0.00">
+      <div class="hint">Enter the current balance (positive number)</div>
+    </div>
+
+    <div class="form-group">
+      <label for="date">Balance Date</label>
+      <input type="date" id="date">
+      <div class="hint">Leave blank for today's date</div>
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes (optional)</label>
+      <textarea id="notes" placeholder="e.g., Monthly statement, after transfer, etc."></textarea>
+    </div>
+
+    <div class="button-group">
+      <button type="button" class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <button type="submit" class="btn-primary" id="submitBtn">Add Entry</button>
+    </div>
+  </form>
+
+  <script>
+    // Load accounts on dialog open
+    document.addEventListener('DOMContentLoaded', function() {
+      loadAccounts();
+      setDefaultDate();
+    });
+
+    function loadAccounts() {
+      google.script.run
+        .withSuccessHandler(function(accounts) {
+          const select = document.getElementById('accountId');
+          select.innerHTML = '<option value="">Select an account...</option>';
+
+          accounts.forEach(function(account) {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = account.label;
+            select.appendChild(option);
+          });
+        })
+        .withFailureHandler(function(error) {
+          showMessage('Failed to load accounts: ' + error.message, 'error');
+        })
+        .getActiveAccountsList();
+    }
+
+    function setDefaultDate() {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('date').value = today;
+    }
+
+    // Form submission
+    document.getElementById('entryForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const form = document.getElementById('entryForm');
+      const submitBtn = document.getElementById('submitBtn');
+
+      // Gather form data
+      const formData = {
+        accountId: document.getElementById('accountId').value,
+        amount: document.getElementById('amount').value,
+        date: document.getElementById('date').value,
+        notes: document.getElementById('notes').value
+      };
+
+      // Validate
+      if (!formData.accountId) {
+        showMessage('Please select an account.', 'error');
+        return;
+      }
+
+      if (!formData.amount || parseFloat(formData.amount) < 0) {
+        showMessage('Please enter a valid balance amount.', 'error');
+        return;
+      }
+
+      // Disable form during submission
+      form.classList.add('loading');
+      submitBtn.textContent = 'Adding...';
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          form.classList.remove('loading');
+          submitBtn.textContent = 'Add Entry';
+
+          if (result.success) {
+            showMessage(result.message, 'success');
+            // Reset form for another entry
+            document.getElementById('amount').value = '';
+            document.getElementById('notes').value = '';
+            setDefaultDate();
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          form.classList.remove('loading');
+          submitBtn.textContent = 'Add Entry';
+          showMessage('Error: ' + error.message, 'error');
+        })
+        .processManualEntry(formData);
+    });
+
+    function showMessage(text, type) {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message ' + type;
+      msg.style.display = 'block';
+
+      if (type === 'success') {
+        setTimeout(function() {
+          msg.style.display = 'none';
+        }, 3000);
+      }
+    }
+  </script>
+</body>
+</html>
