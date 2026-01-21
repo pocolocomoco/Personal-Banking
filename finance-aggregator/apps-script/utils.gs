@@ -35,11 +35,11 @@ function getAccountsMap() {
       institution: row[1],
       accountName: row[2],
       accountType: row[3],
-      isAsset: row[4] === true || row[4] === 'TRUE' || row[4] === true,
+      isAsset: parseBoolean(row[4]),
       plaidAccountId: row[5],
       ingestionMethod: row[6],
       lastUpdated: row[7] ? new Date(row[7]) : null,
-      isActive: row[8] === true || row[8] === 'TRUE' || row[8] === true,
+      isActive: parseBoolean(row[8], true), // default to true if empty
       rowIndex: i + 1 // 1-indexed for sheet operations
     };
   }
@@ -363,6 +363,30 @@ function formatDate(date) {
 // ============================================================================
 
 /**
+ * Parses a boolean value from sheet cell
+ * Handles: true/false (boolean), 'TRUE'/'FALSE' (string), checkboxes, 1/0
+ * @param {*} value - The cell value
+ * @param {boolean} defaultValue - Default if empty/null (default: false)
+ * @returns {boolean}
+ */
+function parseBoolean(value, defaultValue = false) {
+  if (value === null || value === undefined || value === '') {
+    return defaultValue;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase().trim();
+    return lower === 'true' || lower === 'yes' || lower === '1';
+  }
+  return defaultValue;
+}
+
+/**
  * Validates account type
  */
 function isValidAccountType(type) {
@@ -387,4 +411,50 @@ function generateAccountId(institution, accountType, sequence) {
     .substring(0, 10);
 
   return `${instAbbrev}_${accountType}_${String(sequence).padStart(3, '0')}`;
+}
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+/**
+ * Debug function to show what the script sees
+ * Run this from Apps Script to diagnose issues
+ */
+function debugAccountsAndBalances() {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  console.log('=== ACCOUNTS ===');
+  for (const [id, account] of Object.entries(accounts)) {
+    console.log(`${id}: isAsset=${account.isAsset} (${typeof account.isAsset}), isActive=${account.isActive}, type=${account.accountType}`);
+  }
+
+  console.log('\n=== BALANCES ===');
+  for (const [id, balance] of Object.entries(balances)) {
+    console.log(`${id}: $${balance}`);
+  }
+
+  console.log('\n=== CALCULATIONS ===');
+  console.log(`Assets: $${sumAllAssets()}`);
+  console.log(`Liabilities: $${sumAllLiabilities()}`);
+  console.log(`Net Worth: $${calculateNetWorth()}`);
+
+  // Return summary for UI display
+  const summary = [];
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+    const bal = balances[id] || 0;
+    summary.push(`${account.institution} - ${account.accountName}: $${bal} (${account.isAsset ? 'ASSET' : 'LIABILITY'})`);
+  }
+
+  return summary.join('\n');
+}
+
+/**
+ * Shows debug info in a dialog
+ */
+function showDebugInfo() {
+  const info = debugAccountsAndBalances();
+  SpreadsheetApp.getUi().alert('Debug Info', info, SpreadsheetApp.getUi().ButtonSet.OK);
 }
