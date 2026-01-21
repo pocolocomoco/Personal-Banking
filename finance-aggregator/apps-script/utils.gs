@@ -1,0 +1,491 @@
+/**
+ * Finance Aggregator - Utility Functions
+ *
+ * Shared helper functions used across the application
+ */
+
+// ============================================================================
+// DATA ACCESS HELPERS
+// ============================================================================
+
+/**
+ * Gets all accounts as a map keyed by account_id
+ * @returns {Object} Map of account_id -> account data
+ */
+function getAccountsMap() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Accounts');
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return {};
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const accounts = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const accountId = row[0];
+
+    if (!accountId) continue;
+
+    accounts[accountId] = {
+      accountId: row[0],
+      institution: row[1],
+      accountName: row[2],
+      accountType: row[3],
+      isAsset: parseBoolean(row[4]),
+      plaidAccountId: row[5],
+      ingestionMethod: row[6],
+      lastUpdated: row[7] ? new Date(row[7]) : null,
+      isActive: parseBoolean(row[8], true), // default to true if empty
+      rowIndex: i + 1 // 1-indexed for sheet operations
+    };
+  }
+
+  return accounts;
+}
+
+/**
+ * Gets the latest balance for each account
+ * @returns {Object} Map of account_id -> latest balance amount
+ */
+function getLatestBalances() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Balances');
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return {};
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const balances = {};
+
+  // Process all rows and keep only the latest per account
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const accountId = row[1];
+    const balanceDate = row[2] ? new Date(row[2]) : null;
+    const amount = parseFloat(row[3]) || 0;
+
+    if (!accountId || !balanceDate) continue;
+
+    if (!balances[accountId] || balanceDate > balances[accountId].date) {
+      balances[accountId] = {
+        date: balanceDate,
+        amount: amount
+      };
+    }
+  }
+
+  // Flatten to just amounts
+  const result = {};
+  for (const [id, data] of Object.entries(balances)) {
+    result[id] = data.amount;
+  }
+
+  return result;
+}
+
+/**
+ * Gets configuration values from Config tab
+ * @returns {Object} Configuration key-value pairs
+ */
+function getConfig() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Config');
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return getDefaultConfig();
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const config = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const key = data[i][0];
+    const value = data[i][1];
+    if (key) {
+      config[key] = value;
+    }
+  }
+
+  return config;
+}
+
+/**
+ * Returns default configuration values
+ */
+function getDefaultConfig() {
+  return {
+    STALE_THRESHOLD_DAYS: 7,
+    ALERT_EMAIL: '',
+    LAST_REFRESH: '',
+    PLAID_ENVIRONMENT: 'development',
+    AUTO_REFRESH_ENABLED: false,
+    IMPORT_FOLDER_ID: ''
+  };
+}
+
+/**
+ * Updates a config value
+ */
+function setConfigValue(key, value) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Config');
+
+  if (!sheet) return false;
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return true;
+    }
+  }
+
+  // Key not found, add it
+  sheet.appendRow([key, value, '']);
+  return true;
+}
+
+// ============================================================================
+// UPDATE HELPERS
+// ============================================================================
+
+/**
+ * Updates the last_updated field for an account
+ */
+function updateAccountLastUpdated(accountId, date) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Accounts');
+  const accounts = getAccountsMap();
+
+  const account = accounts[accountId];
+  if (!account) return false;
+
+  // last_updated is column 8 (index 7, but we use 8 for getRange)
+  sheet.getRange(account.rowIndex, 8).setValue(date || new Date());
+  return true;
+}
+
+/**
+ * Updates the last refresh timestamp in config
+ */
+function updateLastRefreshTime() {
+  setConfigValue('LAST_REFRESH', new Date().toISOString());
+}
+
+// ============================================================================
+// LOGGING
+// ============================================================================
+
+/**
+ * Logs an activity to the ImportLog sheet
+ */
+function logActivity(action, details) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('ImportLog');
+
+  if (!sheet) return;
+
+  sheet.appendRow([
+    new Date(),
+    action,
+    details,
+    'OK'
+  ]);
+
+  // Keep log manageable - trim if over 1000 rows
+  if (sheet.getLastRow() > 1000) {
+    sheet.deleteRows(2, 100); // Delete oldest 100 entries
+  }
+}
+
+/**
+ * Logs an error to the ImportLog sheet and console
+ */
+function logError(functionName, error) {
+  console.error(`[${functionName}] ${error.message}`, error.stack);
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('ImportLog');
+
+  if (!sheet) return;
+
+  sheet.appendRow([
+    new Date(),
+    'ERROR',
+    `${functionName}: ${error.message}`,
+    'FAIL'
+  ]);
+}
+
+// ============================================================================
+// CALCULATION FUNCTIONS (Used by Dashboard)
+// ============================================================================
+
+/**
+ * Calculates total net worth
+ * Can be called as custom function: =calculateNetWorth()
+ */
+function calculateNetWorth() {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  let netWorth = 0;
+
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+
+    const balance = balances[id] || 0;
+    if (account.isAsset) {
+      netWorth += balance;
+    } else {
+      netWorth -= balance;
+    }
+  }
+
+  return netWorth;
+}
+
+/**
+ * Sums balances by account type and asset/liability status
+ * Can be called as custom function: =sumByType("checking", TRUE)
+ */
+function sumByType(accountType, isAsset) {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  let total = 0;
+
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+    if (account.accountType !== accountType) continue;
+    if (account.isAsset !== isAsset) continue;
+
+    total += balances[id] || 0;
+  }
+
+  return total;
+}
+
+/**
+ * Sums all assets
+ * Can be called as custom function: =sumAllAssets()
+ */
+function sumAllAssets() {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  let total = 0;
+
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+    if (!account.isAsset) continue;
+
+    total += balances[id] || 0;
+  }
+
+  return total;
+}
+
+/**
+ * Sums all liabilities
+ * Can be called as custom function: =sumAllLiabilities()
+ */
+function sumAllLiabilities() {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  let total = 0;
+
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+    if (account.isAsset) continue;
+
+    total += balances[id] || 0;
+  }
+
+  return total;
+}
+
+/**
+ * Gets balance for a specific account
+ * Can be called as custom function: =getAccountBalance("chase_checking_001")
+ */
+function getAccountBalance(accountId) {
+  const balances = getLatestBalances();
+  return balances[accountId] || 0;
+}
+
+/**
+ * Gets last updated date for a specific account
+ * Can be called as custom function: =getAccountLastUpdated("chase_checking_001")
+ */
+function getAccountLastUpdated(accountId) {
+  const accounts = getAccountsMap();
+  const account = accounts[accountId];
+
+  if (!account || !account.lastUpdated) {
+    return 'Never';
+  }
+
+  return account.lastUpdated;
+}
+
+// ============================================================================
+// FORMATTING HELPERS
+// ============================================================================
+
+/**
+ * Formats a number as currency
+ */
+function formatCurrency(amount) {
+  return '$' + amount.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+/**
+ * Formats a date as YYYY-MM-DD using the script's configured timezone
+ */
+function formatDate(date) {
+  if (!date) return '';
+  return Utilities.formatDate(new Date(date), getTimezone(), 'yyyy-MM-dd');
+}
+
+/**
+ * Gets the configured timezone from appsscript.json
+ */
+function getTimezone() {
+  return Session.getScriptTimeZone();
+}
+
+/**
+ * Parses a date string (YYYY-MM-DD) into a Date object in local timezone
+ * Avoids the UTC midnight issue where new Date("2024-01-15") becomes
+ * Jan 14th in timezones west of UTC
+ * @param {string} dateStr - Date string in YYYY-MM-DD format
+ * @returns {Date} Date object set to noon local time (avoids DST edge cases)
+ */
+function parseDateString(dateStr) {
+  if (!dateStr) return new Date();
+
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) {
+    // Fallback for other formats - append time to force local interpretation
+    return new Date(dateStr + 'T12:00:00');
+  }
+
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+  const day = parseInt(parts[2], 10);
+
+  // Create date at noon local time to avoid DST boundary issues
+  return new Date(year, month, day, 12, 0, 0);
+}
+
+// ============================================================================
+// VALIDATION HELPERS
+// ============================================================================
+
+/**
+ * Parses a boolean value from sheet cell
+ * Handles: true/false (boolean), 'TRUE'/'FALSE' (string), checkboxes, 1/0
+ * @param {*} value - The cell value
+ * @param {boolean} defaultValue - Default if empty/null (default: false)
+ * @returns {boolean}
+ */
+function parseBoolean(value, defaultValue = false) {
+  if (value === null || value === undefined || value === '') {
+    return defaultValue;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase().trim();
+    return lower === 'true' || lower === 'yes' || lower === '1';
+  }
+  return defaultValue;
+}
+
+/**
+ * Validates account type
+ */
+function isValidAccountType(type) {
+  const validTypes = ['checking', 'savings', 'credit', 'investment', 'loan', 'other'];
+  return validTypes.includes(type.toLowerCase());
+}
+
+/**
+ * Validates ingestion method
+ */
+function isValidIngestionMethod(method) {
+  const validMethods = ['manual', 'csv', 'plaid'];
+  return validMethods.includes(method.toLowerCase());
+}
+
+/**
+ * Generates a standard account ID
+ */
+function generateAccountId(institution, accountType, sequence) {
+  const instAbbrev = institution.toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .substring(0, 10);
+
+  return `${instAbbrev}_${accountType}_${String(sequence).padStart(3, '0')}`;
+}
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+/**
+ * Debug function to show what the script sees
+ * Run this from Apps Script to diagnose issues
+ */
+function debugAccountsAndBalances() {
+  const accounts = getAccountsMap();
+  const balances = getLatestBalances();
+
+  console.log('=== ACCOUNTS ===');
+  for (const [id, account] of Object.entries(accounts)) {
+    console.log(`${id}: isAsset=${account.isAsset} (${typeof account.isAsset}), isActive=${account.isActive}, type=${account.accountType}`);
+  }
+
+  console.log('\n=== BALANCES ===');
+  for (const [id, balance] of Object.entries(balances)) {
+    console.log(`${id}: $${balance}`);
+  }
+
+  console.log('\n=== CALCULATIONS ===');
+  console.log(`Assets: $${sumAllAssets()}`);
+  console.log(`Liabilities: $${sumAllLiabilities()}`);
+  console.log(`Net Worth: $${calculateNetWorth()}`);
+
+  // Return summary for UI display
+  const summary = [];
+  for (const [id, account] of Object.entries(accounts)) {
+    if (!account.isActive) continue;
+    const bal = balances[id] || 0;
+    summary.push(`${account.institution} - ${account.accountName}: $${bal} (${account.isAsset ? 'ASSET' : 'LIABILITY'})`);
+  }
+
+  return summary.join('\n');
+}
+
+/**
+ * Shows debug info in a dialog
+ */
+function showDebugInfo() {
+  const info = debugAccountsAndBalances();
+  SpreadsheetApp.getUi().alert('Debug Info', info, SpreadsheetApp.getUi().ButtonSet.OK);
+}
