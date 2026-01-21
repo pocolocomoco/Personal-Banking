@@ -105,8 +105,10 @@ function processManualEntry(formData) {
       throw new Error('Invalid balance amount. Must be a positive number.');
     }
 
-    // Parse date
-    const balanceDate = formData.date ? new Date(formData.date) : new Date();
+    // Parse date - handle timezone correctly
+    // HTML date inputs return "YYYY-MM-DD" which new Date() interprets as UTC midnight
+    // This can shift the date by a day. Parse manually to get local date.
+    const balanceDate = formData.date ? parseDateString(formData.date) : new Date();
 
     // Append to Balances sheet
     balancesSheet.appendRow([

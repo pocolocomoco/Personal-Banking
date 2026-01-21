@@ -351,11 +351,42 @@ function formatCurrency(amount) {
 }
 
 /**
- * Formats a date as YYYY-MM-DD
+ * Formats a date as YYYY-MM-DD using the script's configured timezone
  */
 function formatDate(date) {
   if (!date) return '';
-  return Utilities.formatDate(new Date(date), 'America/Los_Angeles', 'yyyy-MM-dd');
+  return Utilities.formatDate(new Date(date), getTimezone(), 'yyyy-MM-dd');
+}
+
+/**
+ * Gets the configured timezone from appsscript.json
+ */
+function getTimezone() {
+  return Session.getScriptTimeZone();
+}
+
+/**
+ * Parses a date string (YYYY-MM-DD) into a Date object in local timezone
+ * Avoids the UTC midnight issue where new Date("2024-01-15") becomes
+ * Jan 14th in timezones west of UTC
+ * @param {string} dateStr - Date string in YYYY-MM-DD format
+ * @returns {Date} Date object set to noon local time (avoids DST edge cases)
+ */
+function parseDateString(dateStr) {
+  if (!dateStr) return new Date();
+
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) {
+    // Fallback for other formats - append time to force local interpretation
+    return new Date(dateStr + 'T12:00:00');
+  }
+
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+  const day = parseInt(parts[2], 10);
+
+  // Create date at noon local time to avoid DST boundary issues
+  return new Date(year, month, day, 12, 0, 0);
 }
 
 // ============================================================================
