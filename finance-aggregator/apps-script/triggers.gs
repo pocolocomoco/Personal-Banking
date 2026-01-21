@@ -109,20 +109,20 @@ function scheduledRefresh() {
   const results = [];
 
   try {
-    // Fetch Plaid balances if configured
-    if (isPlaidConfigured()) {
-      console.log('Fetching Plaid balances...');
-      const plaidResults = fetchAllPlaidBalances();
+    // Fetch SimpleFIN balances if configured
+    if (isSimpleFINConfigured()) {
+      console.log('Fetching SimpleFIN balances...');
+      const simplefinResults = fetchAllSimpleFINBalances();
 
-      if (plaidResults.success) {
-        results.push(`Plaid: Fetched ${plaidResults.fetched.length} account(s)`);
+      if (simplefinResults.success) {
+        results.push(`SimpleFIN: Fetched ${simplefinResults.fetched.length} account(s)`);
       } else {
-        errors.push(`Plaid: ${plaidResults.error || 'Unknown error'}`);
+        errors.push(`SimpleFIN: ${simplefinResults.error || 'Unknown error'}`);
       }
 
-      // Add any Plaid-specific errors
-      if (plaidResults.errors && plaidResults.errors.length > 0) {
-        plaidResults.errors.forEach(e => errors.push(`Plaid ${e.institution}: ${e.error}`));
+      // Add any SimpleFIN-specific errors
+      if (simplefinResults.errors && simplefinResults.errors.length > 0) {
+        simplefinResults.errors.forEach(e => errors.push(`SimpleFIN: ${e.error}`));
       }
     }
 

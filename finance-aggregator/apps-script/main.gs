@@ -21,12 +21,12 @@ function onOpen() {
     .addItem('Check Stale Accounts', 'checkStaleAccounts')
     .addItem('View System Status', 'showSystemStatus')
     .addSeparator()
-    .addSubMenu(ui.createMenu('Plaid')
-      .addItem('Setup Plaid Credentials', 'setupPlaidCredentials')
-      .addItem('Add Access Token', 'addPlaidAccessToken')
+    .addSubMenu(ui.createMenu('SimpleFIN')
+      .addItem('Setup SimpleFIN', 'setupSimpleFIN')
+      .addItem('Fetch Balances Now', 'manualSimpleFINFetch')
+      .addItem('View Status', 'showSimpleFINStatus')
       .addSeparator()
-      .addItem('Fetch Balances Now', 'manualPlaidFetch')
-      .addItem('View Plaid Status', 'showPlaidStatus'))
+      .addItem('Disconnect', 'disconnectSimpleFIN'))
     .addSubMenu(ui.createMenu('Admin')
       .addItem('Initialize Sheet', 'initializeSheet')
       .addItem('Setup Triggers', 'setupAllTriggers')
@@ -50,14 +50,14 @@ function refreshAllBalances() {
   log.push(`[${new Date().toISOString()}] Starting balance refresh...`);
 
   try {
-    // Fetch Plaid balances if configured
-    if (isPlaidConfigured()) {
-      log.push('Fetching Plaid balances...');
-      const plaidResults = fetchAllPlaidBalances();
-      if (plaidResults.success) {
-        log.push(`Plaid: Fetched ${plaidResults.fetched.length} account(s)`);
+    // Fetch SimpleFIN balances if configured
+    if (isSimpleFINConfigured()) {
+      log.push('Fetching SimpleFIN balances...');
+      const simplefinResults = fetchAllSimpleFINBalances();
+      if (simplefinResults.success) {
+        log.push(`SimpleFIN: Fetched ${simplefinResults.fetched.length} account(s)`);
       } else {
-        log.push(`Plaid: ${plaidResults.error || 'Some errors occurred'}`);
+        log.push(`SimpleFIN: ${simplefinResults.error || 'Some errors occurred'}`);
       }
     }
 
