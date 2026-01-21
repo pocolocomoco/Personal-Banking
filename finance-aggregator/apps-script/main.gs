@@ -21,8 +21,15 @@ function onOpen() {
     .addItem('Check Stale Accounts', 'checkStaleAccounts')
     .addItem('View System Status', 'showSystemStatus')
     .addSeparator()
+    .addSubMenu(ui.createMenu('Plaid')
+      .addItem('Setup Plaid Credentials', 'setupPlaidCredentials')
+      .addItem('Add Access Token', 'addPlaidAccessToken')
+      .addSeparator()
+      .addItem('Fetch Balances Now', 'manualPlaidFetch')
+      .addItem('View Plaid Status', 'showPlaidStatus'))
     .addSubMenu(ui.createMenu('Admin')
       .addItem('Initialize Sheet', 'initializeSheet')
+      .addItem('Setup Triggers', 'setupAllTriggers')
       .addItem('Clear All Balances', 'clearAllBalances')
       .addItem('Export Backup', 'exportBackup'))
     .addToUi();
@@ -43,9 +50,16 @@ function refreshAllBalances() {
   log.push(`[${new Date().toISOString()}] Starting balance refresh...`);
 
   try {
-    // Phase 0: Only manual accounts exist
-    // Phase 1+: Add CSV import processing here
-    // Phase 2+: Add Plaid fetching here
+    // Fetch Plaid balances if configured
+    if (isPlaidConfigured()) {
+      log.push('Fetching Plaid balances...');
+      const plaidResults = fetchAllPlaidBalances();
+      if (plaidResults.success) {
+        log.push(`Plaid: Fetched ${plaidResults.fetched.length} account(s)`);
+      } else {
+        log.push(`Plaid: ${plaidResults.error || 'Some errors occurred'}`);
+      }
+    }
 
     // Update the last refresh timestamp
     updateLastRefreshTime();

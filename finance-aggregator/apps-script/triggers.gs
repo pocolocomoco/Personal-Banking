@@ -106,14 +106,28 @@ function scheduledRefresh() {
 
   console.log('Starting scheduled refresh...');
   const errors = [];
+  const results = [];
 
   try {
-    // Phase 0: Just update timestamp
-    // Phase 1+: Process CSV imports
-    // Phase 2+: Fetch Plaid balances
+    // Fetch Plaid balances if configured
+    if (isPlaidConfigured()) {
+      console.log('Fetching Plaid balances...');
+      const plaidResults = fetchAllPlaidBalances();
+
+      if (plaidResults.success) {
+        results.push(`Plaid: Fetched ${plaidResults.fetched.length} account(s)`);
+      } else {
+        errors.push(`Plaid: ${plaidResults.error || 'Unknown error'}`);
+      }
+
+      // Add any Plaid-specific errors
+      if (plaidResults.errors && plaidResults.errors.length > 0) {
+        plaidResults.errors.forEach(e => errors.push(`Plaid ${e.institution}: ${e.error}`));
+      }
+    }
 
     updateLastRefreshTime();
-    logActivity('SCHEDULED_REFRESH', 'Daily refresh completed successfully');
+    logActivity('SCHEDULED_REFRESH', `Daily refresh completed. ${results.join('; ')}`);
 
   } catch (error) {
     errors.push(error.message);
